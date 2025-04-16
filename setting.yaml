@@ -1,0 +1,36 @@
+# General Settings
+project_name: ezDLT-GAN
+prefix: "(prefix)"
+save_dir: "./"
+
+# Dataset Settings
+dataset:
+  name: "CelebA"
+  data_dir: "../datasets/preprocessed/CelebA_train_s64.pt"
+  image_size: 64
+  channels: 3
+  normalize: true
+
+# Model Settings
+model:
+  type: WGAN
+  latent_dim: 100
+  generator:
+    hidden_dims: [256, 512, 1024]
+  discriminator:
+    hidden_dims: [1024, 512, 256]
+
+  drop_out: 0.4
+  input_size: [3, 64, 64]
+  z_size: 128
+  nb_feat_maps: 128
+
+# Training Parameters
+training:
+  batch_size: 64
+  learning_rate_GAN: 0.0004
+  optimizer: "adam"
+  weight_decay: 0.0001
+  num_epochs: 50
+
+
