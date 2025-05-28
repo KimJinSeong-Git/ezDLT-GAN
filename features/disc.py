@@ -1,39 +1,87 @@
-from torch import nn
-import math
+import torch
+import torch.nn as nn
+import torch.nn.init as init
 
-class DCGAN_discriminator(nn.Module):
-    def __init__(self, input_channels=3, input_size=64):
-        super(DCGAN_discriminator, self).__init__()
-        assert input_size in [2 ** i for i in range(5, 11)], "input_size must be a power of 2 between 32 and 1024"
+class Discriminator(nn.Module):
+    def __init__(self, img_channels=3, feature_maps=64):
+        super(Discriminator, self).__init__()
 
-        min_maps = 128
-        max_channels = 1024
-        init_res = 4
-        nb_downsample = int(math.log2(input_size // init_res))
+        self.discriminator = nn.Sequential(
+            nn.Conv2d(img_channels, feature_maps, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
 
-        layers = []
+            nn.Conv2d(feature_maps, feature_maps * 2, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
 
-        in_channels = input_channels
-        out_channels = min(min_maps, max_channels)
+            nn.Conv2d(feature_maps * 2, feature_maps * 4, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
 
-        # Step 1: Initial conv (no BatchNorm)
-        layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1))
-        layers.append(nn.LeakyReLU(0.2, inplace=True))
+            nn.Conv2d(feature_maps * 4, feature_maps * 8, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2)
+        )
 
-        in_channels = out_channels
-
-        # Step 2: Downsampling blocks
-        for i in range(1, nb_downsample):
-            out_channels = min(in_channels * 2, max_channels)
-            layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1))
-            layers.append(nn.LeakyReLU(0.2, inplace=True))
-            in_channels = out_channels
-
-        # Final 4x4 → 1x1
-        layers.append(nn.Conv2d(in_channels, 1, kernel_size=4, stride=1, padding=0))
-
-        self.discriminator = nn.Sequential(*layers)
+        self.discriminator.add_module("conv_final", nn.Conv2d(feature_maps * 8, 1, kernel_size=4, stride=1, padding=0))
 
     def forward(self, x):
-        out = self.discriminator(x)  # (B, 1, 1, 1)
-        return out.view(-1)
+        output = self.discriminator(x).view(-1)
+        return output
+    
+class MinibatchDiscrimination(nn.Module):
+    def __init__(self, in_features, out_features, kernel_dims, mean=False):
+        super().__init__() 
+        self.in_features = in_features
+        self.out_features = out_features
+        self.kernel_dims = kernel_dims
+        self.mean = mean
+        self.T = nn.Parameter(torch.Tensor(in_features, out_features, kernel_dims))
+        init.normal_(self.T, 0, 1)
+
+    def forward(self, x):
+        matrices = x.mm(self.T.view(self.in_features, -1))
+        matrices = matrices.view(-1, self.out_features, self.kernel_dims)
+
+        M = matrices.unsqueeze(0)
+        M_T = M.permute(1, 0, 2, 3)
+        norm = torch.abs(M - M_T).sum(3)
+        norm = torch.clamp(norm, min=1e-6, max=50)
+        expnorm = torch.exp(-norm)
+        o_b = (expnorm.sum(0) - 1)
+
+        if self.mean:
+            o_b /= x.size(0) - 1
+
+        x = torch.cat([x, o_b], 1)
+        return x
+
+class MinibatchDiscriminator(nn.Module):
+    def __init__(self, img_channels=3, feature_maps=64, input_size=64, nb_classes=10):
+        super(MinibatchDiscriminator, self).__init__()
+
+        self.feature_extractor = nn.Sequential(
+            nn.Conv2d(img_channels, feature_maps, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(feature_maps, feature_maps * 2, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(feature_maps * 2, feature_maps * 4, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(feature_maps * 4, feature_maps * 8, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
+        )
+
+        output_size = input_size // (2 ** 4)
+        feat_dim = feature_maps * 8 * output_size * output_size
+            
+        self.mbd = MinibatchDiscrimination(feat_dim, 64, 50)
+        self.fc = nn.Linear(feat_dim+64, nb_classes)
+
+    def forward(self, x):
+        batch_size = x.shape[0]
+
+        feat = self.feature_extractor(x).view(batch_size, -1)
+        mbd_out = self.mbd(feat)
+        output = self.fc(mbd_out)
+        return feat, output
+    

@@ -1,36 +1,28 @@
 # General Settings
 project_name: ezDLT-GAN
 prefix: "(prefix)"
-save_dir: "./"
+save_dir: "auto"
 
 # Dataset Settings
 dataset:
-  name: "CelebA"
-  data_dir: "../datasets/preprocessed/CelebA_train_s64.pt"
-  image_size: 64
-  channels: 3
-  normalize: true
+  name: "MNIST"
+  root_dataset: "./datasets/preprocessed/MNIST/train"
+  image_size: [3, 64, 64]
+  batch_size: 256
 
 # Model Settings
 model:
-  type: WGAN
-  latent_dim: 100
-  generator:
-    hidden_dims: [256, 512, 1024]
-  discriminator:
-    hidden_dims: [1024, 512, 256]
-
-  drop_out: 0.4
-  input_size: [3, 64, 64]
+  type: "InversionGAN"
   z_size: 128
   nb_feat_maps: 128
 
-# Training Parameters
+  # InversionGAN Setting
+  root_target_model: "./targets/ResNet18_MNIST.pth"
+  type_target_model: "ResNet18"
+  hidden_size: 1024
+  layer_depth: 4
+  nb_classes: 10
+  
 training:
-  batch_size: 64
-  learning_rate_GAN: 0.0004
-  optimizer: "adam"
-  weight_decay: 0.0001
-  num_epochs: 50
-
-
+  epochs: 2
+  learning_rate: 0.0002
